@@ -11,6 +11,123 @@ sandboxing and extremely small JavaScript bundles. You write production code, no
 pseudocode. You do not add dependencies unless they are unavoidable, and you justify
 every byte.
 
+## UI DESIGN — READ THIS FIRST, BUILD THIS FIRST
+
+**The interface is the product.** Before you write runtime logic, design and build the UI
+shell: the drop zone, the two view layouts, the panels, the theme tokens. Everything else
+mounts into it. A technically perfect player with a crude interface is a failed deliverable.
+
+### Design direction
+
+Calm, dense, professional — an instrument panel, not a consumer app. The course content is
+the brightest thing on the screen; all chrome recedes around it. Think of a video editor or
+a browser devtools panel: neutral greys, one accent colour, information packed but never
+cramped.
+
+- **Type**: one system font stack (`ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif`).
+  No webfonts — they cost bytes. Sizes: 11px micro labels, 13px body/UI, 15px panel titles,
+  20px course title. Line-height 1.45. Tabular numerals for durations and sizes.
+- **Colour**: neutral slate scale plus exactly **one** accent (default `#3b82f6`). Semantic
+  colours only for status: green complete, amber in-progress, red error, grey locked.
+  Every colour is a CSS custom property on `:root` — no hardcoded hex outside the token block.
+- **Dark theme is the default.** Light theme is a full, equal-quality override, not an
+  afterthought. Follow `prefers-color-scheme`, allow a manual toggle, persist the choice.
+- **Spacing**: a strict 4px scale (4/8/12/16/24/32). Border radius 6px on controls, 10px on
+  panels. Hairline borders (1px, low-contrast) rather than heavy shadows; one soft shadow
+  reserved for overlays and modals.
+- **Motion**: fast and minimal — 120–180ms ease-out on hover, panel open, view switch.
+  Nothing bounces, nothing slides in from off-screen. Honour `prefers-reduced-motion: reduce`
+  by dropping to zero duration.
+- **Icons**: inline SVG, 16px, 1.5px stroke, drawn by you in a single sprite. No icon library.
+
+### Layout — Learner View
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ◀ title                              [Learner | Editor] │  48px top bar
+├──────────┬───────────────────────────────────────────────┤
+│ outline  │                                               │
+│ (collap- │            SLIDE CANVAS                       │
+│  sible,  │     centred, aspect preserved, letterboxed    │
+│  260px)  │                                               │
+├──────────┴───────────────────────────────────────────────┤
+│ ▶ ──────●────────── 04:12 / 09:30   🔊 ──  CC  ⤢   ‹ ›   │  56px playback bar
+└──────────────────────────────────────────────────────────┘
+```
+Quiet and uncluttered. The outline collapses to a hamburger below 900px. Progress reads as a
+thin line across the very top of the playback bar, plus "Slide 7 of 24" in the bar itself.
+
+### Layout — Editor View
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  ◀ title        slide 7 of 24         [Learner | Editor]   ⤓ Export  │
+├────────────┬──────────────────────────────┬──────────────────────────┤
+│ SLIDES     │                              │ Audio│Text│Actions│Files │
+│ 280px      │       SLIDE CANVAS           │ 340px                    │
+│ tree +     │   (live, with overlay layer  │ inspector for the        │
+│ thumbs +   │    for element highlights)   │ CURRENT slide            │
+│ search     │                              │                          │
+│            ├──────────────────────────────┤                          │
+│            │ ▶ ─────●──── 04:12  🔊 ‹ ›    │                          │
+├────────────┴──────────────────────────────┴──────────────────────────┤
+│ ▾ SCORM  cmi.core.lesson_status = incomplete …        [log] [reset]  │  drawer
+└──────────────────────────────────────────────────────────────────────┘
+```
+Three columns plus a collapsible bottom drawer. Both side panels are resizable by dragging
+their inner edge, collapsible to icon rails, and their widths persist. The canvas never
+shrinks below 480px wide — below 1100px viewport, the right inspector becomes an overlay
+sheet instead of a column.
+
+### The element-highlight overlay (get this visually right)
+
+When the user hovers a row in the Actions panel, draw on a transparent layer *above* the
+iframe — never inject into the course DOM:
+- a 2px accent outline with a 4px soft accent glow around the element's rect,
+- a small label chip pinned to its top-left corner with the element name and action
+  ("Next → slide 8"), auto-flipping to stay inside the canvas,
+- the rest of the slide dimmed to 55% so the target pops.
+In "show all" mode, outline every interactive element at once with numbered chips (1, 2, 3…)
+matching the panel rows, no dimming, and colour-code by action type.
+
+### Panel and control details
+
+- **Slide rows**: thumbnail 48×27, title, and a right-aligned badge cluster. Current slide
+  gets a 2px accent left border and a raised background. Locked slides are dimmed with a
+  small lock glyph. Hovering a row previews its thumbnail at larger size after 400ms.
+- **Audio rows**: filename, duration, size, a slim custom `<audio>` transport (play button,
+  thin progress line, no browser default chrome), and a kebab menu for download/replace.
+- **Text fields**: a bordered textarea that grows with content, the source path shown as
+  faint monospace above it, an "edited" accent dot on changed fields, and a revert arrow.
+  Changes apply on blur and on Ctrl+Enter.
+- **Action rows**: a type chip (colour-coded), label, and the resolved action sentence in
+  secondary text, with the confidence badge (*parsed* / *inferred* / *unknown*) right-aligned.
+  A play-arrow button on hover fires the action.
+- **SCORM drawer**: a dense two-column table, monospace values, newly-changed rows flash the
+  accent colour for 400ms.
+- **Empty and loading states are designed, not blank**: skeleton rows while thumbnails
+  generate, a centred illustration-free message with one clear line of guidance when a
+  panel has nothing to show ("No audio on this slide").
+
+### Drop zone / first run
+
+Full-viewport, centred: a dashed 2px border box, a single upload glyph, "Drop a SCORM .zip
+to start" in 20px, "or choose a file" as a text button beneath, and one line of fine print
+listing supported formats. On drag-over the border and glyph go accent, the box scales to
+1.02. On drop, the box transitions into a determinate progress ring with the unzip
+percentage and the current filename, then the player fades in. **No extra click between
+drop and playback.**
+
+### Non-negotiable UI rules
+
+1. All styling in **one** `styles.css` driven by custom properties. No inline styles except
+   dynamic geometry (overlay rects, panel widths).
+2. Total CSS ≤ 18 KB gzipped.
+3. Every control is keyboard reachable with a visible 2px accent focus ring; panels carry
+   proper ARIA roles and the slide list is a real `role="tree"`.
+4. Nothing jumps or reflows when switching views — the canvas keeps its position and size.
+5. Contrast meets WCAG AA in both themes. Check it, don't assume it.
+
 ## WHAT I WANT
 
 Build **SCORM Lite Player** — a single, dependency-light, 100% client-side JavaScript
@@ -225,7 +342,7 @@ Rebuild the `.zip` with all text and audio edits applied, re-zipping with `fflat
 that were not edited are copied through byte-for-byte. Download as
 `<original-name>-edited.zip`. Show a diff summary of what changed before the download.
 
-## UX DETAILS
+## UX BEHAVIOUR (see **UI DESIGN** above for the visual spec)
 
 - **Drop zone**: full-page drag-and-drop plus a "Choose file" button. Accept `.zip`.
   Visual drag state. Reject non-zip with a clear message.
@@ -293,8 +410,9 @@ Along with the code, give me:
 ## HOW TO WORK
 
 - Write the real code, file by file, complete — no `// TODO: implement` in the core path.
-- Start with the pipeline that proves the whole thing works end to end: drop → unzip →
-  manifest → VFS → iframe → SCORM shim → playing. Get that running first, then build the
+- **Build the UI shell first** — tokens, drop zone, both layouts, empty panels — so the
+  design is settled before logic lands in it. Then wire the pipeline that proves the thing
+  works end to end: drop → unzip → manifest → VFS → iframe → SCORM shim → playing. Then the
   Learner View, then the Editor View panels in the order listed above.
 - Comment the non-obvious parts: the SW fetch handling, the API discovery walk, the
   trigger resolution heuristics.
